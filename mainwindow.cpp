@@ -10,7 +10,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    initportSetting();
+    initPortSetting();
+    shutterPortSetting();
     update = 0;
 }
 
@@ -19,8 +20,8 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-//シリアル通信
-bool MainWindow::initportSetting()
+//シリアル通信セッティング
+bool MainWindow::initPortSetting()
 {
     //ポートの取得
     foreach(const QSerialPortInfo &info, QSerialPortInfo::availablePorts())
@@ -56,7 +57,7 @@ bool MainWindow::initportSetting()
     else{
         qDebug() << QString("Couldn't open %1").arg(portName);
         QMessageBox msgbox;
-        msgbox.setText("通信できません");
+        msgbox.setText("stage通信できません");
         msgbox.exec();
     }
 
@@ -64,42 +65,257 @@ bool MainWindow::initportSetting()
 
 }
 
-//シャッター開閉
-void MainWindow::on_open_pushButton_clicked()
+//シャッターシリアルポートセッティング
+bool MainWindow::shutterPortSetting()
 {
+    //ポート名設定
+    portName = "COM3";
 
+    //ポートの設定
+    baudrate = 38400;
+    //    waitTime = ui->lineEdit_3->text().toInt();
+    parity = QSerialPort::NoParity;
+    stopbits = QSerialPort::OneStop;
+
+    qDebug() << portName;
+    qDebug() << baudrate;
+    //    qDebug() << waitTime;
+    qDebug() << parity;
+    qDebug() << stopbits;
+
+    //ポートのオープン
+    serial2 = new QSerialPort();
+
+    serial2->setPortName(portName);
+    serial2->setBaudRate(baudrate);
+    serial2->setParity(parity);
+    serial2->setStopBits(stopbits);
+    serial2->setDataBits(QSerialPort::Data8);
+
+    couldOpenSerialPort = serial2->open(QIODevice::ReadWrite);
+    if (couldOpenSerialPort)
+        qDebug() << QString("Open %1").arg(portName);
+    else{
+        qDebug() << QString("Couldn't open %1").arg(portName);
+        QMessageBox msgbox;
+        msgbox.setText("shutter通信できません");
+        msgbox.exec();
+    }
+    return couldOpenSerialPort;
 }
 
+//シャッター開く
+void MainWindow::on_open_pushButton_clicked()
+{
+    QString sendRequest;
+    QString stx; // stx = Start of TeXt
+    stx = "OPEN:1";
+
+    sendRequest.append(stx);
+
+    QByteArray requestData = sendRequest.toLocal8Bit();
+
+    qDebug("shutter open");
+
+    serial->write(requestData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
+}
+
+//シャッター閉じる
 void MainWindow::on_close_pushButton_clicked()
 {
+    QString sendRequest;
+    QString stx; // stx = Start of TeXt
+    stx = "CLOSE:1";
 
+    sendRequest.append(stx);
+
+    QByteArray requestData = sendRequest.toLocal8Bit();
+
+    qDebug("shutter close");
+
+    serial->write(requestData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
 }
 
 //ステージ移動
 void MainWindow::on_x_pushButton_clicked()
 {
+    if (ui->x_lineEdit->text().isEmpty() || ui->x_ms_lineEdit->text().isEmpty())//条件がないときは終了
+    {
+        qDebug("No data");
+        QMessageBox msgbox;
+        msgbox.setText("条件を設定してください");
+        msgbox.exec();
+        return;
+    }
+
     movement = ui->x_lineEdit->text();
     velocity = ui->x_ms_lineEdit->text();
-    float m = movement.toFloat();
-    float v = velocity.toFloat();
+//    float m = movement.toFloat();
+//    float v = velocity.toFloat();
+
+    QString movementRequest;
+    QString driveRequest;
+    QString velocityRequest;
+    QString stx; // stx = Start of TeXt
+    QString dtx; //drive
+    QString vtx1,vtx2,vtx3; //velocity
+    stx = "M:1+P";
+    dtx = "G:";
+    vtx1 = "D:1S";
+    vtx2 = "F";
+    vtx3 = "R0";
+
+    movementRequest.append(stx);
+    movementRequest.append(movement);
+
+    driveRequest.append(dtx);
+
+    velocityRequest.append(vtx1);
+    velocityRequest.append(velocity);
+    velocityRequest.append(vtx2);
+    velocityRequest.append(velocity);
+    velocityRequest.append(vtx3);
+
+    QByteArray movementData = movementRequest.toLocal8Bit();
+    QByteArray driveData = driveRequest.toLocal8Bit();
+    QByteArray velocityData = velocityRequest.toLocal8Bit();
+
+    //移動速度送信
+    serial->write(velocityData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
+
+    //移動距離送信
+    serial->write(movementData);
+    serial->write(driveData);
+    responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response2(responseData);
+    qDebug() << response2;
 
 }
 
 void MainWindow::on_y_pushButton_clicked()
 {
+    if (ui->y_lineEdit->text().isEmpty() || ui->y_ms_lineEdit->text().isEmpty())//条件がないときは終了
+    {
+        qDebug("No data");
+        QMessageBox msgbox;
+        msgbox.setText("条件を設定してください");
+        msgbox.exec();
+        return;
+    }
+
     movement = ui->y_lineEdit->text();
     velocity = ui->y_ms_lineEdit->text();
     float m = movement.toFloat();
     float v = velocity.toFloat();
 
+    QString movementRequest = QString("M:1+P%1").arg(m);
+    QString driveRequest = ("G:");
+    QString velocityRequest = QString("D2S%1F%2R0").arg(v).arg(v);
+
+    QByteArray movementData = movementRequest.toLocal8Bit();
+    QByteArray driveData = driveRequest.toLocal8Bit();
+    QByteArray velocityData = velocityRequest.toLocal8Bit();
+
+    //移動速度送信
+    serial->write(velocityData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
+
+    //移動距離送信
+    serial->write(movementData);
+    serial->write(driveData);
+    responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response2(responseData);
+    qDebug() << response2;
+
 }
 
 void MainWindow::on_z_pushButton_clicked()
 {
+    if (ui->z_lineEdit->text().isEmpty() || ui->z_ms_lineEdit->text().isEmpty())//条件がないときは終了
+    {
+        qDebug("No data");
+        QMessageBox msgbox;
+        msgbox.setText("条件を設定してください");
+        msgbox.exec();
+        return;
+    }
+
     movement = ui->z_lineEdit->text();
     velocity = ui->z_ms_lineEdit->text();
     float m = movement.toFloat();
     float v = velocity.toFloat();
+
+    QString movementRequest = QString("M:1+P%1").arg(m);
+    QString driveRequest = ("G:");
+    QString velocityRequest = QString("D2S%1F%2R0").arg(v).arg(v);
+
+    QByteArray movementData = movementRequest.toLocal8Bit();
+    QByteArray driveData = driveRequest.toLocal8Bit();
+    QByteArray velocityData = velocityRequest.toLocal8Bit();
+
+    //移動速度送信
+    serial->write(velocityData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
+
+    //移動距離送信
+    serial->write(movementData);
+    serial->write(driveData);
+    responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response2(responseData);
+    qDebug() << response2;
 
 }
 
@@ -107,24 +323,83 @@ void MainWindow::on_p_pushButton_clicked()
 {
     movement = ui->p_lineEdit->text();
     velocity = ui->p_ms_lineEdit->text();
-    float m = movement.toFloat();
-    float v = velocity.toFloat();
+//    float m = movement.toFloat();
+//    float v = velocity.toFloat();
+
+
 
 }
 
 //ステージ原点移動
 void MainWindow::on_x0_pushButton_clicked()
 {
+    QString sendRequest;
+    QString stx; // stx = Start of TeXt
+    stx = "H:1";
+
+    sendRequest.append(stx);
+
+    QByteArray requestData = sendRequest.toLocal8Bit();
+
+    qDebug("serial start");
+
+    serial->write(requestData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
 
 }
 
 void MainWindow::on_y0_pushButton_clicked()
 {
+    QString sendRequest;
+    QString stx; // stx = Start of TeXt
+    stx = "H:2";
+
+    sendRequest.append(stx);
+
+    QByteArray requestData = sendRequest.toLocal8Bit();
+
+    qDebug("serial start");
+
+    serial->write(requestData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
 
 }
 
 void MainWindow::on_z0_pushButton_clicked()
 {
+    QString sendRequest;
+    QString stx; // stx = Start of TeXt
+    stx = "H:3";
+
+    sendRequest.append(stx);
+
+    QByteArray requestData = sendRequest.toLocal8Bit();
+
+    qDebug("serial start");
+
+    serial->write(requestData);
+    QByteArray responseData = serial->readAll();
+
+    while (serial->waitForReadyRead(50))
+    {
+        responseData += serial->readAll();
+    }
+    QString response(responseData);
+    qDebug() << response;
 
 }
 
@@ -132,6 +407,7 @@ void MainWindow::on_p0_pushButton_clicked()
 {
 
 }
+
 
 //データ参照
 void MainWindow::on_folder_refer_pushButton_clicked()

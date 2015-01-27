@@ -17,10 +17,12 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
-    bool initportSetting();
+    bool initPortSetting();
+    bool shutterPortSetting();
 
     //シリアルポート用
-    QSerialPort *serial;
+    QSerialPort *serial;//ステージ用
+    QSerialPort *serial2;//シャッター用
     QString portName;
     int baudrate;
     int waitTime;
